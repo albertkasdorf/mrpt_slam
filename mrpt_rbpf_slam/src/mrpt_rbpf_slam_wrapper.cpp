@@ -43,6 +43,8 @@ void PFslamWrapper::get_param()
 
 void PFslamWrapper::init()
 {
+  ROS_INFO_COND(DEBUG_LOG_AKA,"<[ PFslamWrapper::init");
+
   // get parameters from ini file
   if (!is_file_exists(ini_filename))
   {
@@ -71,8 +73,9 @@ void PFslamWrapper::init()
   // read sensor topics
   std::vector<std::string> lstSources;
   mrpt::system::tokenize(sensor_source, " ,\t\n", lstSources);
-  ROS_ASSERT_MSG(!lstSources.empty(), "*Fatal*: At least one sensor source must be provided in ~sensor_sources (e.g. "
-                                      "\"scan\" or \"beacon\")");
+  ROS_ASSERT_MSG(
+    !lstSources.empty(),
+    "*Fatal*: At least one sensor source must be provided in ~sensor_sources (e.g. \"scan\" or \"beacon\")");
 
   /// Create subscribers///
   sensorSub_.resize(lstSources.size());
@@ -80,25 +83,33 @@ void PFslamWrapper::init()
   {
     if (lstSources[i].find("scan") != std::string::npos)
     {
+      ROS_INFO("PFslamWrapper::init - Subscribe to: <%s>", lstSources[i].c_str());
       sensorSub_[i] = n_.subscribe(lstSources[i], 1, &PFslamWrapper::laserCallback, this);
     }
     else
     {
+      ROS_INFO("PFslamWrapper::init - Subscribe to: <%s>", lstSources[i].c_str());
       sensorSub_[i] = n_.subscribe(lstSources[i], 1, &PFslamWrapper::callbackBeacon, this);
     }
   }
 
   // init slam
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::init - Before new CMetricMapBuilderRBPF");
   mapBuilder = new mrpt::slam::CMetricMapBuilderRBPF(rbpfMappingOptions);
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::init - Before init_slam");
   init_slam();
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::init - Before init3Dwindow");
   init3Dwindow();
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::init ]>");
 }
 
 void PFslamWrapper::odometryForCallback(CObservationOdometry::Ptr& _odometry, const std_msgs::Header& _msg_header)
 {
+  ROS_INFO_COND(DEBUG_LOG_AKA,"<[ PFslamWrapper::odometryForCallback");
   mrpt::poses::CPose3D poseOdom;
   if (this->waitForTransform(poseOdom, odom_frame_id, base_frame_id, _msg_header.stamp, ros::Duration(1)))
   {
+    ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::odometryForCallback - CObservationOdometry::Create");
     _odometry = CObservationOdometry::Create();
     _odometry->sensorLabel = odom_frame_id;
     _odometry->hasEncodersInfo = false;
@@ -107,6 +118,7 @@ void PFslamWrapper::odometryForCallback(CObservationOdometry::Ptr& _odometry, co
     _odometry->odometry.y() = poseOdom.y();
     _odometry->odometry.phi() = poseOdom.yaw();
   }
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::odometryForCallback ]>");
 }
 
 bool PFslamWrapper::waitForTransform(mrpt::poses::CPose3D& des, const std::string& target_frame,
@@ -134,6 +146,7 @@ bool PFslamWrapper::waitForTransform(mrpt::poses::CPose3D& des, const std::strin
 
 void PFslamWrapper::laserCallback(const sensor_msgs::LaserScan& _msg)
 {
+  ROS_INFO_COND(DEBUG_LOG_AKA,"<[ PFslamWrapper::laserCallback");
 #if MRPT_VERSION >= 0x130
   using namespace mrpt::maps;
   using namespace mrpt::obs;
@@ -144,6 +157,7 @@ void PFslamWrapper::laserCallback(const sensor_msgs::LaserScan& _msg)
 
   if (laser_poses_.find(_msg.header.frame_id) == laser_poses_.end())
   {
+    ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::laserCallback - updateSensorPose");
     updateSensorPose(_msg.header.frame_id);
   }
   else
@@ -168,10 +182,12 @@ void PFslamWrapper::laserCallback(const sensor_msgs::LaserScan& _msg)
     run3Dwindow();
     publishTF();
   }
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::laserCallback ]>");
 }
 
 void PFslamWrapper::callbackBeacon(const mrpt_msgs::ObservationRangeBeacon& _msg)
 {
+  ROS_INFO_COND(DEBUG_LOG_AKA,"<[ PFslamWrapper::callbackBeacon");
 #if MRPT_VERSION >= 0x130
   using namespace mrpt::maps;
   using namespace mrpt::obs;
@@ -182,6 +198,7 @@ void PFslamWrapper::callbackBeacon(const mrpt_msgs::ObservationRangeBeacon& _msg
   CObservationBeaconRanges::Ptr beacon = CObservationBeaconRanges::Create();
   if (beacon_poses_.find(_msg.header.frame_id) == beacon_poses_.end())
   {
+    ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::callbackBeacon - updateSensorPose");
     updateSensorPose(_msg.header.frame_id);
   }
   else
@@ -205,6 +222,7 @@ void PFslamWrapper::callbackBeacon(const mrpt_msgs::ObservationRangeBeacon& _msg
     publishMapPose();
     run3Dwindow();
   }
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslamWrapper::callbackBeacon ]>");
 }
 
 void PFslamWrapper::publishMapPose()

@@ -102,14 +102,19 @@ void PFslam::read_rawlog(std::vector<std::pair<CActionCollection, CSensoryFrame>
 
 void PFslam::observation(CSensoryFrame::Ptr _sf, CObservationOdometry::Ptr _odometry)
 {
+  ROS_INFO_COND(DEBUG_LOG_AKA,"<[ PFslam::observation");
+
   action = CActionCollection::Create();
   CActionRobotMovement2D odom_move;
   odom_move.timestamp = _sf->getObservationByIndex(0)->timestamp;
 
   if (_odometry)
   {
+    ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::observation - if(_odometry)");
+
     if (odomLastObservation_.empty())
     {
+      ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::observation - if(odomLastObservation_.empty())");
       odomLastObservation_ = _odometry->odometry;
     }
 
@@ -120,9 +125,12 @@ void PFslam::observation(CSensoryFrame::Ptr _sf, CObservationOdometry::Ptr _odom
   }
   else if (use_motion_model_default_options_)
   {
+    ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::observation - else if(use_motion_model_default_options_)");
+
     odom_move.computeFromOdometry(mrpt::poses::CPose2D(0, 0, 0), motion_model_default_options_);
     action->insert(odom_move);
   }
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::observation ]>");
 }
 
 void PFslam::init_slam()
@@ -130,7 +138,16 @@ void PFslam::init_slam()
 #if MRPT_VERSION < 0x150
   mapBuilder->options.verbose = true;
 #else
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::init_slam - log4cxx::Logger::getLogger(%s)",ROSCONSOLE_DEFAULT_NAME);
   log4cxx::LoggerPtr ros_logger = log4cxx::Logger::getLogger(ROSCONSOLE_DEFAULT_NAME);
+  if( ros_logger == nullptr )
+    ROS_ERROR("PFslam::init_slam - ros_logger is nullptr.");
+
+  log4cxx::LevelPtr ros_logger_level = ros_logger->getLevel();
+  if( ros_logger_level == nullptr )
+    ROS_ERROR("PFslam::init_slam - ros_logger_level is nullptr.");
+
+  ROS_INFO_COND(DEBUG_LOG_AKA,"PFslam::init_slam - ros_logger->getLevel() => %i", ros_logger_level->toInt());
   mapBuilder->setVerbosityLevel(mrpt_bridge::rosLoggerLvlToMRPTLoggerLvl(ros_logger->getLevel()));
   mapBuilder->logging_enable_console_output = false;
   mapBuilder->logRegisterCallback(static_cast<output_logger_callback_t>(&mrpt_bridge::mrptToROSLoggerCallback));

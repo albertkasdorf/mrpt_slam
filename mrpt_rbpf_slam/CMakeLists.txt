@@ -39,7 +39,8 @@ include_directories(
   include
 )
 
-
+#define DEBUG_LOG_AKA true
+add_definitions(-DDEBUG_LOG_AKA=false)
 
 add_executable(mrpt_rbpf_slam
     src/mrpt_rbpf_slam.cpp
