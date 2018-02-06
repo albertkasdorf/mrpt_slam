@@ -68,6 +68,10 @@ void PFslamWrapper::init()
   pub_Particles_Beacons_ = n_.advertise<geometry_msgs::PoseArray>("particlecloud_beacons", 1, true);
   beacon_viz_pub_ = n_.advertise<visualization_msgs::MarkerArray>("/beacons_viz", 1);
 
+  pub_bor = n_.advertise<mrpt_msgs::BeaconObservationResult>("beacon_observation_result", 1);
+  pub_pose = n_.advertise<geometry_msgs::PoseStamped>("pose_trajectory", 1);
+  pub_pose_estimate = n_.advertise<geometry_msgs::PoseArray>("pose_estimation", 1);
+
   // read sensor topics
   std::vector<std::string> lstSources;
   mrpt::system::tokenize(sensor_source, " ,\t\n", lstSources);
@@ -164,7 +168,7 @@ void PFslamWrapper::laserCallback(const sensor_msgs::LaserScan& _msg)
     mapBuilder->processActionObservation(*action, *sf);
     t_exec = tictac.Tac();
     ROS_INFO("Map building executed in %.03fms", 1000.0f * t_exec);
-    publishMapPose();
+    publishMapPose(_msg.header);
     run3Dwindow();
     publishTF();
   }
@@ -202,12 +206,12 @@ void PFslamWrapper::callbackBeacon(const mrpt_msgs::ObservationRangeBeacon& _msg
     t_exec = tictac.Tac();
     ROS_INFO("Map building executed in %.03fms", 1000.0f * t_exec);
 
-    publishMapPose();
+    publishMapPose(_msg.header);
     run3Dwindow();
   }
 }
 
-void PFslamWrapper::publishMapPose()
+void PFslamWrapper::publishMapPose(const std_msgs::Header& _msg_header)
 {
   // if I received new grid maps from 2D laser scan sensors
   metric_map_ = mapBuilder->mapPDF.getCurrentMostLikelyMetricMap();
@@ -232,7 +236,7 @@ void PFslamWrapper::publishMapPose()
 
     geometry_msgs::PoseArray poseArrayBeacons;
     poseArrayBeacons.header.frame_id = global_frame_id;
-    poseArrayBeacons.header.stamp = ros::Time::now();
+    poseArrayBeacons.header.stamp = ros::Time::now( );
 
     // Count the number of beacons
     unsigned int objs_counter = 0;
@@ -252,6 +256,66 @@ void PFslamWrapper::publishMapPose()
     pub_Particles_Beacons_.publish(poseArrayBeacons);
     vizBeacons();
     viz_beacons.clear();
+
+    //----
+    // Positionsschätzung für die Beacons
+    //----
+    mrpt_msgs::BeaconObservationResult bor;
+    bor.header.frame_id = global_frame_id;
+    bor.header.stamp = _msg_header.stamp;
+
+    for(  CBeaconMap::const_iterator it = metric_map_->m_beaconMap->begin();
+          it != metric_map_->m_beaconMap->end();
+          ++it )
+    {
+      mrpt::poses::CPoint3D mean;
+      mrpt::math::CMatrixDouble33 cov;
+
+      it->getCovarianceAndMean( cov, mean );
+      
+      bor.beacon_id = it->m_ID;
+      bor.pdf_type = it->m_typePDF;
+
+      bor.mean[0] = mean.x();   bor.mean[1] = mean.y();
+      bor.cov[0] = cov(0, 0);   bor.cov[1] = cov(0, 1);
+      bor.cov[2] = cov(1, 0);   bor.cov[3] = cov(1, 1);
+
+      if(it->m_typePDF == CBeacon::TTypePDF::pdfMonteCarlo)
+      {
+        const size_t N = it->m_locationMC.m_particles.size();
+        const size_t ITEMS = 3;
+
+        bor.mc.resize(N * ITEMS);
+
+        for(size_t i = 0; i < N; ++i)
+        {
+          bor.mc[(i * ITEMS) + 0] = it->m_locationMC.m_particles[i].d->x;
+          bor.mc[(i * ITEMS) + 1] = it->m_locationMC.m_particles[i].d->y;
+          bor.mc[(i * ITEMS) + 2] = it->m_locationMC.m_particles[i].log_w;
+        }
+      }
+      else if(it->m_typePDF == CBeacon::TTypePDF::pdfSOG)
+      {
+        const size_t N = it->m_locationSOG.size();
+        const size_t ITEMS = 7;
+
+        bor.sog.resize(N * ITEMS);
+
+        for(size_t i = 0; i < N; ++i)
+        {
+          bor.sog[(i * ITEMS) + 0] = it->m_locationSOG[i].val.mean.x();
+          bor.sog[(i * ITEMS) + 1] = it->m_locationSOG[i].val.mean.y();
+          bor.sog[(i * ITEMS) + 2] = it->m_locationSOG[i].val.cov(0, 0);
+          bor.sog[(i * ITEMS) + 3] = it->m_locationSOG[i].val.cov(0, 1);
+          bor.sog[(i * ITEMS) + 4] = it->m_locationSOG[i].val.cov(1, 0);
+          bor.sog[(i * ITEMS) + 5] = it->m_locationSOG[i].val.cov(1, 1);
+          bor.sog[(i * ITEMS) + 6] = it->m_locationSOG[i].log_w;
+        }
+      }
+      else { }
+
+      pub_bor.publish( bor );
+    }
   }
 
   // publish pose
@@ -266,6 +330,39 @@ void PFslamWrapper::publishMapPose()
   }
 
   pub_Particles_.publish(poseArray);
+
+  //----
+  // Pose auf der Trajektorie zum Zeitpunkt _msg_header.stamp
+  //----
+  mrpt::poses::CPose3D pose_in_map;
+  if(waitForTransform(pose_in_map, global_frame_id, base_frame_id, _msg_header.stamp, ros::Duration(1)))
+  {
+    geometry_msgs::PoseStamped pose_stamped;
+    pose_stamped.header.frame_id = global_frame_id;
+    pose_stamped.header.stamp = _msg_header.stamp;
+
+    geometry_msgs::Pose pose;
+
+    mrpt_bridge::convert(pose_in_map, pose);
+    pose_stamped.pose = pose; 
+
+    pub_pose.publish(pose_stamped); 
+  }
+
+  //----
+  // Pose Schätzung zum Zeitpunkt _msg_header.stamp
+  //----
+  geometry_msgs::PoseArray pose_estimation;
+  pose_estimation.header.frame_id = global_frame_id;
+  pose_estimation.header.stamp = _msg_header.stamp;
+  pose_estimation.poses.resize(curPDF.particlesCount());
+
+  for(size_t i = 0; i < curPDF.particlesCount(); ++i)
+  {
+    mrpt::poses::CPose3D p = curPDF.getParticlePose(i);
+    mrpt_bridge::convert(p, pose_estimation.poses[i]);
+  }
+  pub_pose_estimate.publish(pose_estimation);
 }
 
 void PFslamWrapper::vizBeacons()

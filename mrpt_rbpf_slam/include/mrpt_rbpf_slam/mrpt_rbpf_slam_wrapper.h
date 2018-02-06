@@ -30,6 +30,7 @@
 #include <visualization_msgs/Marker.h>
 // mrpt msgs
 #include "mrpt_msgs/ObservationRangeBeacon.h"
+#include "mrpt_msgs/BeaconObservationResult.h"
 // mrpt bridge libs
 #include <mrpt_bridge/pose.h>
 #include <mrpt_bridge/map.h>
@@ -80,7 +81,7 @@ public:
   * @brief publish beacon or grid map and robot pose
   *
   */
-  void publishMapPose();
+  void publishMapPose(const std_msgs::Header& _msg_header);
 
   /**
   * @brief check the existance of the file
@@ -183,6 +184,10 @@ private:
 
   ros::Publisher pub_map_, pub_metadata_, pub_Particles_, pub_Particles_Beacons_,
       beacon_viz_pub_;  ///<publishers for map and pose particles
+  
+  ros::Publisher pub_bor;
+  ros::Publisher pub_pose;
+  ros::Publisher pub_pose_estimate;
 
   tf::TransformListener listenerTF_;         ///<transform listener
   tf::TransformBroadcaster tf_broadcaster_;  ///<transform broadcaster
